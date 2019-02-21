@@ -2,6 +2,9 @@ import express from 'express';
 import mongodb from 'mongodb';
 import bodyParser from 'body-parser';
 import assert from 'assert';
+import jwt from 'jsonwebtoken';
+import config from './config';
+import cookieParser from 'cookie-parser';
 
 const app = express();
 const dbUrl = "mongodb://localhost";
@@ -10,7 +13,10 @@ const dbUrl = "mongodb://localhost";
 app.use(bodyParser.json());
 
 //解析 application/x-www-form-urlencoded
-app.use(bodyParser.urlencoded({ extended: false }))
+app.use(bodyParser.urlencoded({ extended: false }));
+
+app.use(cookieParser());
+
 
 
 mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
@@ -18,19 +24,43 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
   console.log("Connected successfully to server");
   const db = client.db('xinart');
 
+  var authenticate = (req, res, next) => {
+    const token = req.cookies.token;
+  
+    if (token) {
+      jwt.verify(token, config.jwtSecrete, (err, decode) => {
+          if (err) {
+            res.status(401).json({error: 'failed to authenticate'});
+          } else {
+            next();
+          }
+      })
+    }else {
+      res.status(403).json({
+        error: 'No token provided'
+      });
+    }
+  };
+
+
   //api左边的右划线不要忘记！！！
   app.post('/api/login', (req, res) => {
     const {username, password} = req.body;
     db.collection('account').countDocuments({username, password}, (err, r) => {
       if (r === 1) {
-        res.send("ok")
+        //config.jwtSecrete是一个字符串，对{username: username}进行签名加密
+        const token = jwt.sign({
+          username: username
+        }, config.jwtSecrete );
+        res.cookie('token', token)
+        res.json({isSuccess: "success"}); 
       }else {
         res.send("Your username or password is wrong")
       }
     })
   }) 
 
-  app.post('/api/addAlbum', (req, res) => {
+  app.post('/api/addAlbum', authenticate, (req, res) => {
     const { imgurl, song, album, singer, lyricist, composer, release } = req.body;
         db.collection('albumList').insertOne({ imgurl, song, album, singer, lyricist, composer, release }, (err, result) => {
           if (err) {
@@ -41,7 +71,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
         });
   })
 
-  app.get('/api/deleteAlbum/:_id', (req, res) => {
+  app.get('/api/deleteAlbum/:_id', authenticate, (req, res) => {
     var obj_id = new mongodb.ObjectID(req.params._id);
     db.collection('albumList').deleteOne({"_id": obj_id}, (err, r) => {
       assert.equal(null, err);
@@ -63,7 +93,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
     })
   });
 
-  app.get('/work/detail/:_id', (req, res) => {
+  app.get('/api/work/detail/:_id', (req, res) => {
     // key _id 对应的 value 值比较特殊，他是一个对象而不是字符串
     //所以这里我们需要新建一个对象
     var obj_id = new mongodb.ObjectID(req.params._id);
@@ -72,7 +102,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
     })
   })
 
-  app.post('/api/addArticle', (req, res) => {
+  app.post('/api/addArticle', authenticate, (req, res) => {
     const { time, tag, title, imgurl, desc, detail } = req.body;
         db.collection('articleList').insertOne({ time, tag, title, imgurl, desc, detail }, (err, result) => {
           if (err) {
@@ -83,7 +113,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
         });
   })
 
-  app.get('/api/deleteArticle/:_id', (req, res) => {
+  app.get('/api/deleteArticle/:_id', authenticate, (req, res) => {
     var obj_id = new mongodb.ObjectID(req.params._id);
     db.collection('articleList').deleteOne({"_id": obj_id}, (err, r) => {
       assert.equal(null, err);
@@ -99,7 +129,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
     })
   });
 
-  app.post('/api/addDrawing', (req, res) => {
+  app.post('/api/addDrawing', authenticate, (req, res) => {
     const { imgurl, title, desc } = req.body;
         db.collection('drawingList').insertOne({ imgurl, title, desc }, (err, result) => {
           if (err) {
@@ -110,7 +140,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
         });
   })
 
-  app.get('/api/deleteDrawing/:_id', (req, res) => {
+  app.get('/api/deleteDrawing/:_id', authenticate, (req, res) => {
     var obj_id = new mongodb.ObjectID(req.params._id);
     db.collection('drawingList').deleteOne({"_id": obj_id}, (err, r) => {
       assert.equal(null, err);
@@ -126,7 +156,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
     })
   })
 
-  app.post('/api/addPost', (req, res) => {
+  app.post('/api/addPost', authenticate, (req, res) => {
     const { post, time} = req.body;
         db.collection('postList').insertOne({ post, time }, (err, result) => {
           if (err) {
@@ -137,7 +167,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
         });
   })
 
-  app.get('/api/deletePost/:_id', (req, res) => {
+  app.get('/api/deletePost/:_id', authenticate, (req, res) => {
     var obj_id = new mongodb.ObjectID(req.params._id);
     db.collection('postList').deleteOne({"_id": obj_id}, (err, r) => {
       assert.equal(null, err);
@@ -147,7 +177,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
     })
   })
 
-  app.post('/api/addAboutMe', (req, res) => {
+  app.post('/api/addAboutMe', authenticate, (req, res) => {
     const { aboutMe } = req.body;
         db.collection('aboutMeList').insertOne({ aboutMe }, (err, result) => {
           if (err) {
@@ -164,7 +194,7 @@ mongodb.MongoClient.connect(dbUrl,{ useNewUrlParser: true }, (err, client) => {
     })
   })
 
-  app.get('/api/deleteAboutMe/:_id', (req, res) => {
+  app.get('/api/deleteAboutMe/:_id', authenticate, (req, res) => {
     var obj_id = new mongodb.ObjectID(req.params._id);
     db.collection('aboutMeList').deleteOne({"_id": obj_id}, (err, r) => {
       assert.equal(null, err);
